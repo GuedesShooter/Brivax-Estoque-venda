@@ -3,25 +3,408 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Brivax App</title>
-  <meta name="theme-color" content="#0d0d0f"/>
+  <title>Brivax Controle de Estoque</title>
+  <meta name="description" content="Aplicativo Brivax para controle de estoque, clientes e vendas.">
+  <meta name="theme-color" content="#ff6b2c">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Brivax">
-  <meta name="description" content="App HTML simples que funciona como aplicativo no iPhone e Android.">
+  <meta name="apple-mobile-web-app-title" content="Brivax Controle">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar"><h1>Brivax</h1></header>
-  <main class="container">
-    <section class="card">
-      <h2>App HTML da Brivax</h2>
-      <p>Este app HTML pode ser instalado no iPhone e Android como PWA.</p>
-      <button id="btnInstall" class="btn">Instalar</button>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="Logo Brivax" class="logo">
+      <div class="brand-copy">
+        <h1>Brivax Controle</h1>
+        <p>Estoque, vendas e clientes em um único painel</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="btnInstall" class="btn ghost" hidden>Instalar app</button>
+      <span id="currentUser" class="user-pill" hidden></span>
+      <button id="btnLogout" class="btn danger" hidden>Sair</button>
+    </div>
+  </header>
+
+  <main class="main-area">
+    <section id="authView" class="card auth-card">
+      <div class="tabs" role="tablist" aria-label="Acesso Brivax">
+        <button type="button" class="tab active" data-target="register" aria-selected="true">Criar conta</button>
+        <button type="button" class="tab" data-target="login" aria-selected="false">Entrar</button>
+      </div>
+      <div id="authMessage" class="alert" hidden role="status" aria-live="polite"></div>
+      <div class="tab-panel" data-panel="register">
+        <form id="registerForm" class="form-grid">
+          <div class="form-row">
+            <label>Nome
+              <input type="text" id="registerFirstName" required autocomplete="given-name">
+            </label>
+            <label>Sobrenome
+              <input type="text" id="registerLastName" required autocomplete="family-name">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Telefone
+              <input type="tel" id="registerPhone" required autocomplete="tel" placeholder="(00) 00000-0000">
+            </label>
+            <label>E-mail
+              <input type="email" id="registerEmail" required autocomplete="email">
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="full">Nome de usuário
+              <input type="text" id="registerUsername" required autocomplete="username" pattern="[a-z0-9]+" title="Use apenas letras minúsculas e números" placeholder="ex: brivaxusuario">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Senha
+              <input type="password" id="registerPassword" required autocomplete="new-password" minlength="6">
+            </label>
+            <label>Confirmar senha
+              <input type="password" id="registerConfirm" required autocomplete="new-password" minlength="6">
+            </label>
+          </div>
+          <label class="checkbox">
+            <input type="checkbox" id="registerRemember"> Lembrar de mim neste dispositivo
+          </label>
+          <button type="submit" class="btn primary">Cadastrar e entrar</button>
+        </form>
+      </div>
+      <div class="tab-panel hidden" data-panel="login" aria-hidden="true">
+        <p class="helper-text">Administrador padrão: <strong>GuedezShooter</strong> / <strong>Guedes/007</strong></p>
+        <form id="loginForm" class="form-grid">
+          <label>Usuário
+            <input type="text" id="loginUser" required autocomplete="username">
+          </label>
+          <label>Senha
+            <input type="password" id="loginPass" required autocomplete="current-password">
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="loginRemember"> Lembrar de mim neste dispositivo
+          </label>
+          <button type="submit" class="btn primary">Entrar</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="appView" class="app-shell hidden" aria-hidden="true">
+      <nav id="appNav" class="app-nav">
+        <button class="nav-btn active" data-panel="dashboard">Resumo</button>
+        <button class="nav-btn" data-panel="inventory">Estoque</button>
+        <button class="nav-btn admin-only" data-panel="sales">Vendas</button>
+        <button class="nav-btn admin-only" data-panel="products">Produtos</button>
+        <button class="nav-btn admin-only" data-panel="clients">Clientes</button>
+        <button class="nav-btn admin-only" data-panel="activity">Histórico</button>
+        <button class="nav-btn admin-only" data-panel="users">Usuários</button>
+      </nav>
+
+      <section class="panel active" id="panel-dashboard">
+        <header class="panel-header">
+          <div>
+            <h2>Visão geral</h2>
+            <p id="roleBadge" class="badge"></p>
+          </div>
+        </header>
+        <div class="summary-grid">
+          <article class="summary-card">
+            <h3>Peças cadastradas</h3>
+            <p id="summaryPieces">0</p>
+          </article>
+          <article class="summary-card">
+            <h3>Estoque total</h3>
+            <p id="summaryStock">0</p>
+          </article>
+          <article class="summary-card">
+            <h3>Vendas</h3>
+            <p id="summarySales">0</p>
+          </article>
+          <article class="summary-card">
+            <h3>Clientes</h3>
+            <p id="summaryClients">0</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-inventory">
+        <header class="panel-header">
+          <div>
+            <h2>Controle de estoque</h2>
+            <p class="helper-text">Usuários podem cadastrar novas peças. Apenas administradores editam ou removem.</p>
+          </div>
+        </header>
+        <form id="pieceForm" class="form-card">
+          <input type="hidden" id="pieceId">
+          <div class="form-row">
+            <label>Nome
+              <input type="text" id="pieceName" required>
+            </label>
+            <label>Descrição
+              <input type="text" id="pieceDescription" placeholder="Opcional">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Custo (R$)
+              <input type="number" id="pieceCost" min="0" step="0.01" required>
+            </label>
+            <label>Preço de venda (R$)
+              <input type="number" id="piecePrice" min="0" step="0.01" required>
+            </label>
+            <label>Quantidade
+              <input type="number" id="pieceQuantity" min="0" step="1" required>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="pieceSubmit">Salvar peça</button>
+            <button type="button" class="btn ghost" id="pieceCancel">Limpar</button>
+          </div>
+        </form>
+        <div class="table-card">
+          <table id="piecesTable">
+            <thead>
+              <tr>
+                <th>Peça</th>
+                <th>Custos</th>
+                <th>Estoque</th>
+                <th>Última atualização</th>
+                <th class="admin-only">Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-sales">
+        <header class="panel-header">
+          <h2>Registro de vendas</h2>
+        </header>
+        <form id="saleForm" class="form-card">
+          <div class="form-row">
+            <label>Peça
+              <select id="salePiece" required></select>
+            </label>
+            <label>Quantidade
+              <input type="number" id="saleQuantity" min="1" step="1" required>
+            </label>
+            <label>Data
+              <input type="date" id="saleDate" required>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn accent">Registrar venda</button>
+          </div>
+        </form>
+        <div class="table-card">
+          <table id="salesTable">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Peça</th>
+                <th>Quantidade</th>
+                <th>Total</th>
+                <th>Responsável</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-products">
+        <header class="panel-header">
+          <h2>Produtos</h2>
+        </header>
+        <form id="productForm" class="form-card">
+          <input type="hidden" id="productId">
+          <div class="form-row">
+            <label>Nome
+              <input type="text" id="productName" required>
+            </label>
+            <label>Código/SKU
+              <input type="text" id="productSku" placeholder="Ex.: BRX-001">
+            </label>
+            <label>Categoria
+              <input type="text" id="productCategory">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Preço (R$)
+              <input type="number" id="productPrice" min="0" step="0.01" required>
+            </label>
+            <label>Quantidade
+              <input type="number" id="productQuantity" min="0" step="1" required>
+            </label>
+          </div>
+          <label>Descrição
+            <textarea id="productDescription" rows="2" placeholder="Detalhes relevantes"></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="productSubmit">Salvar produto</button>
+            <button type="button" class="btn ghost" id="productCancel">Limpar</button>
+          </div>
+        </form>
+        <div class="table-card">
+          <table id="productsTable">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Código</th>
+                <th>Categoria</th>
+                <th>Preço</th>
+                <th>Estoque</th>
+                <th>Atualizado</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-clients">
+        <header class="panel-header">
+          <h2>Clientes Brivax</h2>
+        </header>
+        <form id="clientForm" class="form-card">
+          <input type="hidden" id="clientId">
+          <div class="form-row">
+            <label>Nome do cliente
+              <input type="text" id="clientName" required>
+            </label>
+            <label>CPF ou CNPJ
+              <input type="text" id="clientDocument" required>
+            </label>
+            <label>Cidade
+              <input type="text" id="clientCity">
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Contato
+              <input type="text" id="clientContact" required>
+            </label>
+            <label>E-mail
+              <input type="email" id="clientEmail" required>
+            </label>
+            <label>Endereço de cobrança
+              <input type="text" id="clientBillingAddress" required>
+            </label>
+          </div>
+          <fieldset class="fieldset">
+            <legend>Instalação</legend>
+            <div class="form-row">
+              <label>Loja ou franquia
+                <input type="text" id="clientStore">
+              </label>
+              <label>Cidade de instalação
+                <input type="text" id="clientInstallCity">
+              </label>
+              <label>Endereço de instalação
+                <input type="text" id="clientInstallAddress">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Responsável
+                <input type="text" id="clientResponsible">
+              </label>
+              <label>Contato do responsável
+                <input type="text" id="clientResponsiblePhone">
+              </label>
+              <label>Data da instalação
+                <input type="date" id="clientInstallDate">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Técnico e ajudante
+                <input type="text" id="clientTechnicians">
+              </label>
+              <label>Data da entrega do serviço
+                <input type="date" id="clientDeliveryDate">
+              </label>
+            </div>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend>Financeiro</legend>
+            <div class="form-row">
+              <label>Data de assinatura do contrato
+                <input type="date" id="clientContractDate">
+              </label>
+              <label>Valor total (R$)
+                <input type="number" id="clientTotal" min="0" step="0.01">
+              </label>
+              <label>Entrada (R$)
+                <input type="number" id="clientEntry" min="0" step="0.01">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Parcelas
+                <input type="number" id="clientInstallments" min="0" step="1">
+              </label>
+              <label>Datas das parcelas
+                <input type="text" id="clientInstallmentDates" placeholder="10/01, 10/02, 10/03">
+              </label>
+              <label>Manutenção prevista
+                <input type="date" id="clientMaintenance">
+              </label>
+            </div>
+          </fieldset>
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="clientSubmit">Salvar cliente</button>
+            <button type="button" class="btn ghost" id="clientCancel">Limpar</button>
+          </div>
+        </form>
+        <div class="table-card">
+          <table id="clientsTable">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Contato</th>
+                <th>Instalação</th>
+                <th>Contrato</th>
+                <th>Financeiro</th>
+                <th>Manutenção</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-activity">
+        <header class="panel-header">
+          <h2>Histórico de atividades</h2>
+        </header>
+        <ul id="activityList" class="timeline"></ul>
+      </section>
+
+      <section class="panel" id="panel-users">
+        <header class="panel-header">
+          <h2>Usuários cadastrados</h2>
+        </header>
+        <div class="table-card">
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th>Usuário</th>
+                <th>Nome</th>
+                <th>Perfil</th>
+                <th>Criado em</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </section>
   </main>
-  <script src="app.js"></script>
+
+  <footer class="footer">
+    <small>© Brivax • Controle de estoque acessível em qualquer dispositivo.</small>
+  </footer>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>
