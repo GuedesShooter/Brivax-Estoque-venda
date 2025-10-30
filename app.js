@@ -1,9 +1,9 @@
 const STORAGE_KEYS = {
+  users: 'brivax_users',
   pieces: 'brivax_pieces',
   sales: 'brivax_sales',
-  users: 'brivax_users',
-  clients: 'brivax_clients',
   products: 'brivax_products',
+  clients: 'brivax_clients',
   activity: 'brivax_activity'
 };
 
@@ -11,17 +11,32 @@ const REMEMBER_KEY = 'brivax_remember';
 const SESSION_KEY = 'brivax_session';
 
 const state = {
+  users: [],
   pieces: [],
   sales: [],
-  users: [],
-  clients: [],
   products: [],
+  clients: [],
   activity: [],
-  currentUser: null
+  currentUser: null,
+  currentPanel: 'dashboard'
 };
 
 const elements = {};
 let deferredPrompt = null;
+
+const PANEL_IDS = {
+  dashboard: 'panel-dashboard',
+  inventory: 'panel-inventory',
+  sales: 'panel-sales',
+  products: 'panel-products',
+  clients: 'panel-clients',
+  activity: 'panel-activity',
+  users: 'panel-users'
+};
+
+const ADMIN_ONLY_PANELS = new Set(['sales', 'products', 'clients', 'activity', 'users']);
+
+document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   cacheElements();
@@ -31,7 +46,7 @@ function init() {
   hydrateRememberedCredentials();
   restoreSession();
   updateInstallButton();
-  renderAll();
+  renderApp();
 }
 
 function cacheElements() {
@@ -56,12 +71,13 @@ function cacheElements() {
   elements.btnLogout = document.getElementById('btnLogout');
   elements.btnInstall = document.getElementById('btnInstall');
   elements.currentUser = document.getElementById('currentUser');
+  elements.appNav = document.getElementById('appNav');
+  elements.navButtons = Array.from(document.querySelectorAll('#appNav .nav-btn'));
   elements.roleBadge = document.getElementById('roleBadge');
   elements.summaryPieces = document.getElementById('summaryPieces');
   elements.summaryStock = document.getElementById('summaryStock');
   elements.summarySales = document.getElementById('summarySales');
   elements.summaryClients = document.getElementById('summaryClients');
-  elements.newPiece = document.getElementById('newPiece');
   elements.pieceForm = document.getElementById('pieceForm');
   elements.pieceId = document.getElementById('pieceId');
   elements.pieceName = document.getElementById('pieceName');
@@ -77,7 +93,6 @@ function cacheElements() {
   elements.saleQuantity = document.getElementById('saleQuantity');
   elements.saleDate = document.getElementById('saleDate');
   elements.salesTable = document.querySelector('#salesTable tbody');
-  elements.newProduct = document.getElementById('newProduct');
   elements.productForm = document.getElementById('productForm');
   elements.productId = document.getElementById('productId');
   elements.productName = document.getElementById('productName');
@@ -89,7 +104,6 @@ function cacheElements() {
   elements.productSubmit = document.getElementById('productSubmit');
   elements.productCancel = document.getElementById('productCancel');
   elements.productsTable = document.querySelector('#productsTable tbody');
-  elements.newClient = document.getElementById('newClient');
   elements.clientForm = document.getElementById('clientForm');
   elements.clientId = document.getElementById('clientId');
   elements.clientName = document.getElementById('clientName');
@@ -128,21 +142,22 @@ function bindEvents() {
   elements.loginForm.addEventListener('submit', handleLogin);
   elements.btnLogout.addEventListener('click', logout);
 
-  elements.newPiece.addEventListener('click', () => togglePieceForm(true));
-  elements.pieceCancel.addEventListener('click', () => togglePieceForm(false));
+  elements.navButtons.forEach((button) => {
+    button.addEventListener('click', () => setActivePanel(button.dataset.panel));
+  });
+
   elements.pieceForm.addEventListener('submit', handlePieceSubmit);
+  elements.pieceCancel.addEventListener('click', resetPieceForm);
   elements.piecesTable.addEventListener('click', handlePieceActions);
 
   elements.saleForm.addEventListener('submit', handleSaleSubmit);
 
-  elements.newProduct.addEventListener('click', () => toggleProductForm(true));
-  elements.productCancel.addEventListener('click', () => toggleProductForm(false));
   elements.productForm.addEventListener('submit', handleProductSubmit);
+  elements.productCancel.addEventListener('click', resetProductForm);
   elements.productsTable.addEventListener('click', handleProductActions);
 
-  elements.newClient.addEventListener('click', () => toggleClientForm(true));
-  elements.clientCancel.addEventListener('click', () => toggleClientForm(false));
   elements.clientForm.addEventListener('submit', handleClientSubmit);
+  elements.clientCancel.addEventListener('click', resetClientForm);
   elements.clientsTable.addEventListener('click', handleClientActions);
 
   window.addEventListener('beforeinstallprompt', (event) => {
@@ -162,67 +177,66 @@ function bindEvents() {
 
 function loadState() {
   Object.keys(STORAGE_KEYS).forEach((key) => {
-    const stored = localStorage.getItem(STORAGE_KEYS[key]);
-    if (stored) {
-      try {
-        state[key] = JSON.parse(stored);
-      } catch (error) {
-        console.warn('Erro ao ler storage', key, error);
-        state[key] = Array.isArray(state[key]) ? [] : state[key];
-      }
+    try {
+      const value = localStorage.getItem(STORAGE_KEYS[key]);
+      state[key] = value ? JSON.parse(value) : Array.isArray(state[key]) ? [] : null;
+    } catch (error) {
+      console.error('Erro ao carregar storage', key, error);
+      state[key] = Array.isArray(state[key]) ? [] : null;
     }
   });
 }
 
 function ensureDefaultAdmin() {
-  const username = 'GuedezShooter';
-  const existing = state.users.find((user) => user.username === username);
-  if (!existing) {
-    const admin = {
-      id: generateId('user'),
-      username,
-      password: 'Guedes/007',
-      role: 'admin',
-      firstName: 'Administrador',
-      lastName: 'Brivax',
-      phone: '',
-      email: 'admin@brivax.com',
-      createdAt: new Date().toISOString()
-    };
-    state.users.push(admin);
-    saveState('users');
-    logActivity('Configuração', 'Administrador padrão GuedezShooter criado automaticamente.', 'sistema');
-  }
+  if (state.users.some((user) => user.username === 'GuedezShooter')) return;
+
+  const admin = {
+    id: generateId('user'),
+    username: 'GuedezShooter',
+    password: 'Guedes/007',
+    role: 'admin',
+    firstName: 'Administrador',
+    lastName: 'Brivax',
+    phone: '',
+    email: 'admin@brivax.com',
+    createdAt: new Date().toISOString()
+  };
+
+  state.users.push(admin);
+  saveState('users');
+  logActivity('Configuração', 'Administrador padrão criado automaticamente.', 'sistema');
 }
 
 function hydrateRememberedCredentials() {
   try {
     const stored = localStorage.getItem(REMEMBER_KEY);
     if (!stored) return;
-    const { username, password } = JSON.parse(stored);
-    if (username && password) {
-      elements.loginUser.value = username;
-      elements.loginPass.value = password;
+    const data = JSON.parse(stored);
+    if (data.username) {
+      elements.loginUser.value = data.username;
       elements.loginRemember.checked = true;
     }
+    if (data.password) {
+      elements.loginPass.value = data.password;
+    }
   } catch (error) {
-    console.warn('Erro ao ler credenciais salvas', error);
+    console.warn('Não foi possível carregar credenciais salvas', error);
   }
 }
 
 function restoreSession() {
-  const username = sessionStorage.getItem(SESSION_KEY);
-  if (!username) return;
-  const user = state.users.find((candidate) => candidate.username === username);
-  if (user) {
-    state.currentUser = user;
+  try {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    const user = state.users.find((item) => item.id === data.userId);
+    if (user) {
+      state.currentUser = user;
+      state.currentPanel = data.panel || 'dashboard';
+    }
+  } catch (error) {
+    console.warn('Sessão inválida', error);
   }
-}
-
-function updateInstallButton() {
-  if (!elements.btnInstall) return;
-  const canInstall = Boolean(deferredPrompt);
-  elements.btnInstall.classList.toggle('hidden', !canInstall);
 }
 
 function switchAuthTab(target) {
@@ -231,45 +245,38 @@ function switchAuthTab(target) {
     tab.classList.toggle('active', isActive);
     tab.setAttribute('aria-selected', String(isActive));
   });
+
   elements.panels.forEach((panel) => {
     const isActive = panel.dataset.panel === target;
     panel.classList.toggle('hidden', !isActive);
     panel.setAttribute('aria-hidden', String(!isActive));
   });
-  clearAuthMessage();
-}
 
-function showAuthMessage(text, type = 'info') {
-  elements.authMessage.textContent = text;
-  elements.authMessage.hidden = false;
-  elements.authMessage.classList.toggle('error', type === 'error');
-}
-
-function clearAuthMessage() {
-  elements.authMessage.hidden = true;
-  elements.authMessage.textContent = '';
-  elements.authMessage.classList.remove('error');
+  hideAuthMessage();
 }
 
 function handleRegister(event) {
   event.preventDefault();
-  clearAuthMessage();
-
+  const firstName = elements.registerFirstName.value.trim();
+  const lastName = elements.registerLastName.value.trim();
+  const phone = elements.registerPhone.value.trim();
+  const email = elements.registerEmail.value.trim();
   const username = elements.registerUsername.value.trim();
-  if (!/^[a-z0-9]+$/.test(username)) {
-    showAuthMessage('O usuário deve conter apenas letras minúsculas e números, sem espaços.', 'error');
-    return;
-  }
-
   const password = elements.registerPassword.value;
   const confirm = elements.registerConfirm.value;
-  if (password !== confirm) {
-    showAuthMessage('As senhas não conferem. Verifique e tente novamente.', 'error');
+  const remember = elements.registerRemember.checked;
+
+  if (!/^[a-z0-9]+$/.test(username)) {
+    showAuthMessage('O nome de usuário deve conter apenas letras minúsculas e números.', 'error');
     return;
   }
 
-  const exists = state.users.some((user) => user.username === username);
-  if (exists) {
+  if (password !== confirm) {
+    showAuthMessage('As senhas não conferem.', 'error');
+    return;
+  }
+
+  if (state.users.some((user) => user.username === username)) {
     showAuthMessage('Este nome de usuário já está em uso.', 'error');
     return;
   }
@@ -279,129 +286,211 @@ function handleRegister(event) {
     username,
     password,
     role: 'user',
-    firstName: elements.registerFirstName.value.trim(),
-    lastName: elements.registerLastName.value.trim(),
-    phone: elements.registerPhone.value.trim(),
-    email: elements.registerEmail.value.trim(),
+    firstName,
+    lastName,
+    phone,
+    email,
     createdAt: new Date().toISOString()
   };
 
   state.users.push(user);
   saveState('users');
-  logActivity('Cadastro', `Novo usuário ${username} criado.`, 'sistema');
+  logActivity('Novo usuário', `${firstName} ${lastName} criou uma conta.`, username);
 
-  if (elements.registerRemember.checked) {
-    setRememberedCredentials(username, password);
-  }
+  rememberCredentials(username, password, remember);
+  elements.registerForm.reset();
+  elements.registerRemember.checked = remember;
 
-  showAuthMessage('Usuário criado com sucesso! Faça login para acessar o sistema.');
-  switchAuthTab('login');
-  elements.loginUser.value = username;
-  elements.loginPass.value = password;
+  loginUser(user);
+  showAuthMessage('Conta criada com sucesso. Bem-vindo!', 'success');
 }
 
 function handleLogin(event) {
   event.preventDefault();
-  clearAuthMessage();
   const username = elements.loginUser.value.trim();
   const password = elements.loginPass.value;
+  const remember = elements.loginRemember.checked;
 
-  const user = state.users.find((candidate) => candidate.username === username && candidate.password === password);
+  const user = state.users.find((item) => item.username === username && item.password === password);
   if (!user) {
-    showAuthMessage('Usuário ou senha inválidos.', 'error');
+    showAuthMessage('Credenciais inválidas. Verifique usuário e senha.', 'error');
     return;
   }
 
-  if (elements.loginRemember.checked) {
-    setRememberedCredentials(username, password);
-  } else {
-    clearRememberedCredentials();
-  }
-
-  enterApp(user);
+  rememberCredentials(username, password, remember);
+  loginUser(user);
+  hideAuthMessage();
 }
 
-function enterApp(user) {
+function loginUser(user) {
   state.currentUser = user;
-  sessionStorage.setItem(SESSION_KEY, user.username);
-  renderAll();
+  state.currentPanel = 'dashboard';
+  saveSession();
+  renderApp();
 }
 
 function logout() {
   state.currentUser = null;
-  sessionStorage.removeItem(SESSION_KEY);
-  renderAll();
+  state.currentPanel = 'dashboard';
+  localStorage.removeItem(SESSION_KEY);
+  renderApp();
 }
 
-function setRememberedCredentials(username, password) {
-  localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username, password }));
-}
-
-function clearRememberedCredentials() {
-  localStorage.removeItem(REMEMBER_KEY);
-}
-
-function togglePieceForm(show) {
-  if (!show) {
-    elements.pieceForm.reset();
-    elements.pieceId.value = '';
+function showAuthMessage(message, variant = 'info') {
+  elements.authMessage.textContent = message;
+  elements.authMessage.classList.remove('hidden');
+  elements.authMessage.classList.remove('success', 'error');
+  if (variant !== 'info') {
+    elements.authMessage.classList.add(variant);
   }
-  elements.pieceForm.hidden = !show;
-  if (show) {
-    elements.pieceName.focus();
+}
+
+function hideAuthMessage() {
+  elements.authMessage.textContent = '';
+  elements.authMessage.classList.add('hidden');
+  elements.authMessage.classList.remove('success', 'error');
+}
+
+function rememberCredentials(username, password, remember) {
+  if (remember) {
+    localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username, password }));
+  } else {
+    localStorage.removeItem(REMEMBER_KEY);
   }
+}
+
+function renderApp() {
+  const isLogged = Boolean(state.currentUser);
+  elements.authView.classList.toggle('hidden', isLogged);
+  elements.authView.setAttribute('aria-hidden', String(isLogged));
+  elements.appView.classList.toggle('hidden', !isLogged);
+  elements.appView.setAttribute('aria-hidden', String(!isLogged));
+  elements.btnLogout.hidden = !isLogged;
+  elements.currentUser.hidden = !isLogged;
+  elements.btnInstall.hidden = !deferredPrompt;
+
+  if (!isLogged) {
+    elements.currentUser.textContent = '';
+    setActivePanel('dashboard');
+    return;
+  }
+
+  elements.currentUser.textContent = `${state.currentUser.firstName} ${state.currentUser.lastName}`.trim() || state.currentUser.username;
+  applyAdminVisibility();
+  setActivePanel(state.currentPanel);
+  renderSummary();
+  renderPieces();
+  renderSales();
+  renderProducts();
+  renderClients();
+  renderActivity();
+  renderUsers();
+  updateSaleOptions();
+}
+
+function applyAdminVisibility() {
+  const isAdmin = state.currentUser?.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach((element) => {
+    if (isAdmin) {
+      element.classList.remove('hidden');
+    } else {
+      element.classList.add('hidden');
+    }
+  });
+
+  if (!isAdmin && ADMIN_ONLY_PANELS.has(state.currentPanel)) {
+    state.currentPanel = 'dashboard';
+  }
+}
+
+function setActivePanel(panelName) {
+  const isAdmin = state.currentUser?.role === 'admin';
+  if (!isAdmin && ADMIN_ONLY_PANELS.has(panelName)) {
+    return;
+  }
+
+  state.currentPanel = panelName;
+  saveSession();
+
+  elements.navButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.panel === panelName);
+    const hiddenByRole = button.classList.contains('admin-only') && !isAdmin;
+    button.classList.toggle('hidden', hiddenByRole);
+  });
+
+  Object.entries(PANEL_IDS).forEach(([key, id]) => {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    const isActive = key === panelName;
+    panel.classList.toggle('active', isActive);
+  });
 }
 
 function handlePieceSubmit(event) {
   event.preventDefault();
-  if (!state.currentUser) return;
+  const name = elements.pieceName.value.trim();
+  const description = elements.pieceDescription.value.trim();
+  const cost = Number(elements.pieceCost.value);
+  const price = Number(elements.piecePrice.value);
+  const quantity = Number(elements.pieceQuantity.value);
+  const existingId = elements.pieceId.value;
+  const isAdmin = state.currentUser?.role === 'admin';
 
-  const payload = {
-    name: elements.pieceName.value.trim(),
-    description: elements.pieceDescription.value.trim(),
-    cost: Number(elements.pieceCost.value),
-    price: Number(elements.piecePrice.value),
-    quantity: Number(elements.pieceQuantity.value)
-  };
-
-  if (Number.isNaN(payload.cost) || Number.isNaN(payload.price) || Number.isNaN(payload.quantity)) {
-    alert('Verifique os valores informados.');
+  if (!Number.isFinite(cost) || cost < 0) {
+    alert('Informe um custo válido.');
     return;
   }
 
-  const existingId = elements.pieceId.value;
+  if (!Number.isFinite(price) || price < 0) {
+    alert('Informe um preço de venda válido.');
+    return;
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    alert('A quantidade deve ser um número inteiro positivo.');
+    return;
+  }
+
   if (existingId) {
-    if (!isAdmin()) {
+    if (!isAdmin) {
       alert('Somente administradores podem editar peças existentes.');
       return;
     }
     const piece = state.pieces.find((item) => item.id === existingId);
     if (!piece) return;
-    Object.assign(piece, payload, {
-      updatedAt: new Date().toISOString(),
-      updatedBy: state.currentUser.username
-    });
-    logActivity('Estoque', `Peça ${piece.name} atualizada.`);
+    piece.name = name;
+    piece.description = description;
+    piece.cost = cost;
+    piece.price = price;
+    piece.quantity = quantity;
+    piece.updatedAt = new Date().toISOString();
+    saveState('pieces');
+    logActivity('Peça atualizada', `${name} atualizada pelo administrador.`, state.currentUser.username);
   } else {
     const piece = {
       id: generateId('piece'),
-      ...payload,
+      name,
+      description,
+      cost,
+      price,
+      quantity,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       createdBy: state.currentUser.username
     };
     state.pieces.push(piece);
-    logActivity('Estoque', `Peça ${piece.name} cadastrada.`);
+    saveState('pieces');
+    logActivity('Nova peça', `${name} adicionada ao estoque.`, state.currentUser.username);
   }
 
-  saveState('pieces');
-  togglePieceForm(false);
+  resetPieceForm();
   renderPieces();
-  renderSalesSelect();
-  updateSummary();
+  renderSummary();
+  updateSaleOptions();
 }
 
 function handlePieceActions(event) {
-  const button = event.target.closest('button[data-action]');
+  const button = event.target.closest('button');
   if (!button) return;
   const id = button.dataset.id;
   const action = button.dataset.action;
@@ -409,38 +498,66 @@ function handlePieceActions(event) {
   if (!piece) return;
 
   if (action === 'edit') {
-    if (!isAdmin()) {
-      alert('Somente administradores podem editar peças existentes.');
-      return;
-    }
+    if (state.currentUser?.role !== 'admin') return;
     elements.pieceId.value = piece.id;
     elements.pieceName.value = piece.name;
     elements.pieceDescription.value = piece.description || '';
     elements.pieceCost.value = piece.cost;
     elements.piecePrice.value = piece.price;
     elements.pieceQuantity.value = piece.quantity;
-    togglePieceForm(true);
+    elements.pieceName.focus();
   }
 
   if (action === 'delete') {
-    if (!isAdmin()) {
-      alert('Somente administradores podem remover peças.');
-      return;
-    }
-    if (confirm(`Excluir a peça ${piece.name}?`)) {
-      state.pieces = state.pieces.filter((item) => item.id !== id);
-      saveState('pieces');
-      logActivity('Estoque', `Peça ${piece.name} removida.`);
-      renderPieces();
-      renderSalesSelect();
-      updateSummary();
-    }
+    if (state.currentUser?.role !== 'admin') return;
+    if (!confirm('Deseja remover esta peça do estoque?')) return;
+    state.pieces = state.pieces.filter((item) => item.id !== id);
+    saveState('pieces');
+    logActivity('Peça removida', `${piece.name} removida do estoque.`, state.currentUser.username);
+    resetPieceForm();
+    renderPieces();
+    renderSummary();
+    updateSaleOptions();
   }
+}
+
+function resetPieceForm() {
+  elements.pieceForm.reset();
+  elements.pieceId.value = '';
+}
+
+function renderPieces() {
+  const isAdmin = state.currentUser?.role === 'admin';
+  elements.piecesTable.innerHTML = '';
+
+  state.pieces
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((piece) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <strong>${piece.name}</strong><br>
+          <small>${piece.description || '—'}</small>
+        </td>
+        <td>
+          <small>Custo:</small> ${formatCurrency(piece.cost)}<br>
+          <small>Venda:</small> ${formatCurrency(piece.price)}
+        </td>
+        <td>${piece.quantity}</td>
+        <td>${formatDate(piece.updatedAt || piece.createdAt)}</td>
+        <td class="actions ${isAdmin ? '' : 'hidden'}">
+          <button data-action="edit" data-id="${piece.id}">Editar</button>
+          <button data-action="delete" data-id="${piece.id}" class="danger">Excluir</button>
+        </td>
+      `;
+      elements.piecesTable.appendChild(row);
+    });
 }
 
 function handleSaleSubmit(event) {
   event.preventDefault();
-  if (!isAdmin()) {
+  if (state.currentUser?.role !== 'admin') {
     alert('Somente administradores podem registrar vendas.');
     return;
   }
@@ -448,109 +565,125 @@ function handleSaleSubmit(event) {
   const pieceId = elements.salePiece.value;
   const quantity = Number(elements.saleQuantity.value);
   const date = elements.saleDate.value;
-
-  if (!pieceId || Number.isNaN(quantity) || quantity <= 0 || !date) {
-    alert('Preencha todos os campos da venda.');
-    return;
-  }
-
   const piece = state.pieces.find((item) => item.id === pieceId);
+
   if (!piece) {
-    alert('Peça não encontrada.');
+    alert('Selecione uma peça válida.');
     return;
   }
 
-  if (quantity > piece.quantity) {
-    alert('Quantidade superior ao estoque disponível.');
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    alert('Informe uma quantidade válida.');
+    return;
+  }
+
+  if (piece.quantity < quantity) {
+    alert('Estoque insuficiente para registrar a venda.');
     return;
   }
 
   piece.quantity -= quantity;
+  piece.updatedAt = new Date().toISOString();
+
   const sale = {
     id: generateId('sale'),
     pieceId,
-    pieceName: piece.name,
     quantity,
-    total: quantity * piece.price,
     date,
+    total: quantity * piece.price,
+    createdAt: new Date().toISOString(),
     createdBy: state.currentUser.username
   };
 
   state.sales.push(sale);
-  logActivity('Venda', `Venda de ${quantity}x ${piece.name} registrada.`);
-
   saveState('pieces');
   saveState('sales');
+  logActivity('Venda registrada', `${quantity}x ${piece.name} vendidos.`, state.currentUser.username);
 
   elements.saleForm.reset();
   renderPieces();
   renderSales();
-  renderSalesSelect();
-  updateSummary();
+  renderSummary();
 }
 
-function toggleProductForm(show) {
-  if (show && !isAdmin()) return;
-  if (!show) {
-    elements.productForm.reset();
-    elements.productId.value = '';
-  }
-  elements.productForm.hidden = !show;
-  if (show) {
-    elements.productName.focus();
-  }
+function renderSales() {
+  elements.salesTable.innerHTML = '';
+  state.sales
+    .slice()
+    .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
+    .forEach((sale) => {
+      const piece = state.pieces.find((item) => item.id === sale.pieceId);
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${sale.date ? formatDate(sale.date) : '—'}</td>
+        <td>${piece ? piece.name : 'Peça removida'}</td>
+        <td>${sale.quantity}</td>
+        <td>${formatCurrency(sale.total)}</td>
+        <td>${sale.createdBy}</td>
+      `;
+      elements.salesTable.appendChild(row);
+    });
 }
 
 function handleProductSubmit(event) {
   event.preventDefault();
-  if (!isAdmin()) {
-    alert('Somente administradores podem gerenciar produtos.');
+  if (state.currentUser?.role !== 'admin') {
+    alert('Somente administradores podem cadastrar produtos.');
     return;
   }
 
-  const payload = {
-    name: elements.productName.value.trim(),
-    sku: elements.productSku.value.trim(),
-    category: elements.productCategory.value.trim(),
-    price: Number(elements.productPrice.value),
-    quantity: Number(elements.productQuantity.value),
-    description: elements.productDescription.value.trim()
-  };
+  const product = collectProductFromForm();
+  if (!product) return;
 
-  if (!payload.name || Number.isNaN(payload.price) || Number.isNaN(payload.quantity)) {
-    alert('Preencha os campos obrigatórios do produto.');
-    return;
-  }
-
-  const existingId = elements.productId.value;
-  if (existingId) {
-    const product = state.products.find((item) => item.id === existingId);
-    if (!product) return;
-    Object.assign(product, payload, {
-      updatedAt: new Date().toISOString(),
-      updatedBy: state.currentUser.username
-    });
-    logActivity('Produtos', `Produto ${product.name} atualizado.`);
+  if (product.id) {
+    const index = state.products.findIndex((item) => item.id === product.id);
+    if (index >= 0) {
+      state.products[index] = { ...state.products[index], ...product, updatedAt: new Date().toISOString() };
+      logActivity('Produto atualizado', `${product.name} atualizado.`, state.currentUser.username);
+    }
   } else {
-    const product = {
-      id: generateId('product'),
-      ...payload,
-      updatedAt: new Date().toISOString(),
-      updatedBy: state.currentUser.username
-    };
+    product.id = generateId('product');
+    product.createdAt = new Date().toISOString();
+    product.updatedAt = new Date().toISOString();
     state.products.push(product);
-    logActivity('Produtos', `Produto ${product.name} cadastrado.`);
+    logActivity('Produto cadastrado', `${product.name} adicionado ao catálogo.`, state.currentUser.username);
   }
 
   saveState('products');
-  toggleProductForm(false);
+  resetProductForm();
   renderProducts();
 }
 
+function collectProductFromForm() {
+  const id = elements.productId.value || null;
+  const name = elements.productName.value.trim();
+  const sku = elements.productSku.value.trim();
+  const category = elements.productCategory.value.trim();
+  const price = Number(elements.productPrice.value);
+  const quantity = Number(elements.productQuantity.value);
+  const description = elements.productDescription.value.trim();
+
+  if (!name) {
+    alert('Informe o nome do produto.');
+    return null;
+  }
+
+  if (!Number.isFinite(price) || price < 0) {
+    alert('Informe um preço válido.');
+    return null;
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    alert('Informe a quantidade com números inteiros.');
+    return null;
+  }
+
+  return { id, name, sku, category, price, quantity, description };
+}
+
 function handleProductActions(event) {
-  if (!isAdmin()) return;
-  const button = event.target.closest('button[data-action]');
-  if (!button) return;
+  const button = event.target.closest('button');
+  if (!button || state.currentUser?.role !== 'admin') return;
   const id = button.dataset.id;
   const action = button.dataset.action;
   const product = state.products.find((item) => item.id === id);
@@ -564,97 +697,133 @@ function handleProductActions(event) {
     elements.productPrice.value = product.price;
     elements.productQuantity.value = product.quantity;
     elements.productDescription.value = product.description || '';
-    toggleProductForm(true);
+    elements.productName.focus();
   }
 
   if (action === 'delete') {
-    if (!confirm(`Excluir o produto ${product.name}?`)) {
-      return;
-    }
+    if (!confirm('Remover este produto do catálogo?')) return;
     state.products = state.products.filter((item) => item.id !== id);
     saveState('products');
-    logActivity('Produtos', `Produto ${product.name} removido.`);
+    logActivity('Produto removido', `${product.name} removido do catálogo.`, state.currentUser.username);
+    resetProductForm();
     renderProducts();
   }
 }
 
-function toggleClientForm(show) {
-  if (show && !isAdmin()) return;
-  if (!show) {
-    elements.clientForm.reset();
-    elements.clientId.value = '';
-  }
-  elements.clientForm.hidden = !show;
-  if (show) {
-    elements.clientName.focus();
-  }
+function resetProductForm() {
+  elements.productForm.reset();
+  elements.productId.value = '';
+}
+
+function renderProducts() {
+  elements.productsTable.innerHTML = '';
+  state.products
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((product) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${product.name}</strong><br><small>${product.description || '—'}</small></td>
+        <td>${product.sku || '—'}</td>
+        <td>${product.category || '—'}</td>
+        <td>${formatCurrency(product.price)}</td>
+        <td>${product.quantity}</td>
+        <td>${formatDate(product.updatedAt || product.createdAt)}</td>
+        <td class="actions">
+          <button data-action="edit" data-id="${product.id}">Editar</button>
+          <button data-action="delete" data-id="${product.id}" class="danger">Excluir</button>
+        </td>
+      `;
+      elements.productsTable.appendChild(row);
+    });
 }
 
 function handleClientSubmit(event) {
   event.preventDefault();
-  if (!isAdmin()) {
+  if (state.currentUser?.role !== 'admin') {
     alert('Somente administradores podem gerenciar clientes.');
     return;
   }
 
-  const payload = {
-    name: elements.clientName.value.trim(),
-    document: elements.clientDocument.value.trim(),
-    city: elements.clientCity.value.trim(),
-    contact: elements.clientContact.value.trim(),
-    email: elements.clientEmail.value.trim(),
-    billingAddress: elements.clientBillingAddress.value.trim(),
-    store: elements.clientStore.value.trim(),
-    installCity: elements.clientInstallCity.value.trim(),
-    installAddress: elements.clientInstallAddress.value.trim(),
-    responsible: elements.clientResponsible.value.trim(),
-    responsiblePhone: elements.clientResponsiblePhone.value.trim(),
-    installDate: elements.clientInstallDate.value,
-    technicians: elements.clientTechnicians.value.trim(),
-    deliveryDate: elements.clientDeliveryDate.value,
-    contractDate: elements.clientContractDate.value,
-    total: elements.clientTotal.value ? Number(elements.clientTotal.value) : null,
-    entry: elements.clientEntry.value ? Number(elements.clientEntry.value) : null,
-    installments: elements.clientInstallments.value ? Number(elements.clientInstallments.value) : null,
-    installmentDates: elements.clientInstallmentDates.value.trim(),
-    maintenance: elements.clientMaintenance.value
-  };
+  const client = collectClientFromForm();
+  if (!client) return;
 
-  if (!payload.name || !payload.document || !payload.contact || !payload.email || !payload.billingAddress) {
-    alert('Preencha todos os campos obrigatórios do cliente.');
-    return;
-  }
-
-  const existingId = elements.clientId.value;
-  if (existingId) {
-    const client = state.clients.find((item) => item.id === existingId);
-    if (!client) return;
-    Object.assign(client, payload, {
-      updatedAt: new Date().toISOString(),
-      updatedBy: state.currentUser.username
-    });
-    logActivity('Clientes', `Cliente ${client.name} atualizado.`);
+  if (client.id) {
+    const index = state.clients.findIndex((item) => item.id === client.id);
+    if (index >= 0) {
+      state.clients[index] = { ...state.clients[index], ...client, updatedAt: new Date().toISOString() };
+      logActivity('Cliente atualizado', `${client.name} atualizado.`, state.currentUser.username);
+    }
   } else {
-    const client = {
-      id: generateId('client'),
-      ...payload,
-      updatedAt: new Date().toISOString(),
-      updatedBy: state.currentUser.username
-    };
+    client.id = generateId('client');
+    client.createdAt = new Date().toISOString();
+    client.updatedAt = new Date().toISOString();
     state.clients.push(client);
-    logActivity('Clientes', `Cliente ${client.name} cadastrado.`);
+    logActivity('Cliente cadastrado', `${client.name} incluído.`, state.currentUser.username);
   }
 
   saveState('clients');
-  toggleClientForm(false);
+  resetClientForm();
   renderClients();
-  updateSummary();
+  renderSummary();
+}
+
+function collectClientFromForm() {
+  const id = elements.clientId.value || null;
+  const name = elements.clientName.value.trim();
+  const document = elements.clientDocument.value.trim();
+  const city = elements.clientCity.value.trim();
+  const contact = elements.clientContact.value.trim();
+  const email = elements.clientEmail.value.trim();
+  const billing = elements.clientBillingAddress.value.trim();
+  const store = elements.clientStore.value.trim();
+  const installCity = elements.clientInstallCity.value.trim();
+  const installAddress = elements.clientInstallAddress.value.trim();
+  const responsible = elements.clientResponsible.value.trim();
+  const responsiblePhone = elements.clientResponsiblePhone.value.trim();
+  const installDate = elements.clientInstallDate.value;
+  const technicians = elements.clientTechnicians.value.trim();
+  const deliveryDate = elements.clientDeliveryDate.value;
+  const contractDate = elements.clientContractDate.value;
+  const total = parseFloat(elements.clientTotal.value || '0');
+  const entry = parseFloat(elements.clientEntry.value || '0');
+  const installments = parseInt(elements.clientInstallments.value || '0', 10);
+  const installmentDates = elements.clientInstallmentDates.value.trim();
+  const maintenance = elements.clientMaintenance.value;
+
+  if (!name || !document || !contact || !email || !billing) {
+    alert('Preencha os campos obrigatórios do cliente.');
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    document,
+    city,
+    contact,
+    email,
+    billing,
+    store,
+    installCity,
+    installAddress,
+    responsible,
+    responsiblePhone,
+    installDate,
+    technicians,
+    deliveryDate,
+    contractDate,
+    total,
+    entry,
+    installments,
+    installmentDates,
+    maintenance
+  };
 }
 
 function handleClientActions(event) {
-  if (!isAdmin()) return;
-  const button = event.target.closest('button[data-action]');
-  if (!button) return;
+  const button = event.target.closest('button');
+  if (!button || state.currentUser?.role !== 'admin') return;
   const id = button.dataset.id;
   const action = button.dataset.action;
   const client = state.clients.find((item) => item.id === id);
@@ -663,11 +832,11 @@ function handleClientActions(event) {
   if (action === 'edit') {
     elements.clientId.value = client.id;
     elements.clientName.value = client.name;
-    elements.clientDocument.value = client.document || '';
+    elements.clientDocument.value = client.document;
     elements.clientCity.value = client.city || '';
     elements.clientContact.value = client.contact || '';
     elements.clientEmail.value = client.email || '';
-    elements.clientBillingAddress.value = client.billingAddress || '';
+    elements.clientBillingAddress.value = client.billing || '';
     elements.clientStore.value = client.store || '';
     elements.clientInstallCity.value = client.installCity || '';
     elements.clientInstallAddress.value = client.installAddress || '';
@@ -682,301 +851,163 @@ function handleClientActions(event) {
     elements.clientInstallments.value = client.installments ?? '';
     elements.clientInstallmentDates.value = client.installmentDates || '';
     elements.clientMaintenance.value = client.maintenance || '';
-    toggleClientForm(true);
   }
 
   if (action === 'delete') {
-    if (!confirm(`Excluir o cliente ${client.name}?`)) {
-      return;
-    }
+    if (!confirm('Remover este cliente do cadastro?')) return;
     state.clients = state.clients.filter((item) => item.id !== id);
     saveState('clients');
-    logActivity('Clientes', `Cliente ${client.name} removido.`);
+    logActivity('Cliente removido', `${client.name} removido.`, state.currentUser.username);
+    resetClientForm();
     renderClients();
-    updateSummary();
+    renderSummary();
   }
 }
 
-function renderAll() {
-  updateVisibility();
-  renderPieces();
-  renderSales();
-  renderProducts();
-  renderClients();
-  renderActivity();
-  renderUsers();
-  renderSalesSelect();
-  updateSummary();
-}
-
-function updateVisibility() {
-  const loggedIn = Boolean(state.currentUser);
-  elements.authView.classList.toggle('hidden', loggedIn);
-  elements.appView.classList.toggle('hidden', !loggedIn);
-  elements.appView.setAttribute('aria-hidden', String(!loggedIn));
-  elements.btnLogout.classList.toggle('hidden', !loggedIn);
-  elements.currentUser.textContent = loggedIn
-    ? `${state.currentUser.firstName} ${state.currentUser.lastName} (${state.currentUser.username})`
-    : '';
-
-  const isAdminUser = isAdmin();
-  document.body.classList.toggle('is-admin', isAdminUser);
-
-  if (loggedIn) {
-    elements.roleBadge.textContent = isAdminUser ? 'Administrador' : 'Usuário';
-  } else {
-    elements.roleBadge.textContent = '';
-  }
-}
-
-function renderPieces() {
-  if (!elements.piecesTable) return;
-  const adminActive = isAdmin();
-  if (!state.pieces.length) {
-    const span = adminActive ? 6 : 5;
-    elements.piecesTable.innerHTML = `<tr><td colspan="${span}">Nenhuma peça cadastrada.</td></tr>`;
-    return;
-  }
-
-  const rows = state.pieces
-    .map((piece) => {
-      const actions = adminActive
-        ? `
-          <td class="admin-only">
-            <div class="actions">
-              <button class="btn ghost small" data-action="edit" data-id="${piece.id}">Editar</button>
-              <button class="btn danger small" data-action="delete" data-id="${piece.id}">Excluir</button>
-            </div>
-          </td>`
-        : '';
-      return `
-        <tr>
-          <td>${escapeHtml(piece.name)}</td>
-          <td>${escapeHtml(piece.description || '')}</td>
-          <td>${formatCurrency(piece.cost)}</td>
-          <td>${formatCurrency(piece.price)}</td>
-          <td>${piece.quantity}</td>
-          ${actions}
-        </tr>`;
-    })
-    .join('');
-
-  elements.piecesTable.innerHTML = rows;
-}
-
-function renderSales() {
-  if (!elements.salesTable) return;
-  if (!state.sales.length) {
-    elements.salesTable.innerHTML = '<tr><td colspan="5">Nenhuma venda registrada.</td></tr>';
-    return;
-  }
-
-  const rows = state.sales
-    .slice()
-    .reverse()
-    .map((sale) => `
-      <tr>
-        <td>${formatDate(sale.date)}</td>
-        <td>${escapeHtml(sale.pieceName)}</td>
-        <td>${sale.quantity}</td>
-        <td>${formatCurrency(sale.total)}</td>
-        <td>${escapeHtml(sale.createdBy)}</td>
-      </tr>`)
-    .join('');
-
-  elements.salesTable.innerHTML = rows;
-}
-
-function renderProducts() {
-  if (!elements.productsTable) return;
-  if (!state.products.length) {
-    elements.productsTable.innerHTML = '<tr><td colspan="7">Nenhum produto cadastrado.</td></tr>';
-    return;
-  }
-
-  const rows = state.products
-    .map((product) => `
-      <tr>
-        <td>${escapeHtml(product.name)}</td>
-        <td>${escapeHtml(product.sku || '')}</td>
-        <td>${escapeHtml(product.category || '')}</td>
-        <td>${formatCurrency(product.price)}</td>
-        <td>${product.quantity}</td>
-        <td>${formatDate(product.updatedAt)}</td>
-        <td>
-          <div class="actions">
-            <button class="btn ghost small" data-action="edit" data-id="${product.id}">Editar</button>
-            <button class="btn danger small" data-action="delete" data-id="${product.id}">Excluir</button>
-          </div>
-        </td>
-      </tr>`)
-    .join('');
-
-  elements.productsTable.innerHTML = rows;
+function resetClientForm() {
+  elements.clientForm.reset();
+  elements.clientId.value = '';
 }
 
 function renderClients() {
-  if (!elements.clientsTable) return;
-  if (!state.clients.length) {
-    elements.clientsTable.innerHTML = '<tr><td colspan="8">Nenhum cliente cadastrado.</td></tr>';
-    return;
-  }
-
-  const rows = state.clients
-    .map((client) => `
-      <tr>
-        <td>${escapeHtml(client.name)}</td>
-        <td>${escapeHtml(client.document || '')}</td>
-        <td>
-          ${escapeHtml(client.contact || '')}<br>
-          ${escapeHtml(client.email || '')}
+  elements.clientsTable.innerHTML = '';
+  state.clients
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((client) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${client.name}</strong><br><small>${client.document}</small></td>
+        <td>${client.contact}<br><small>${client.email}</small></td>
+        <td>${client.installCity || '—'}<br><small>${client.installAddress || '—'}</small></td>
+        <td>${client.contractDate ? formatDate(client.contractDate) : '—'}</td>
+        <td>${formatCurrency(client.total || 0)}<br><small>Entrada: ${formatCurrency(client.entry || 0)}</small></td>
+        <td>${client.maintenance ? formatDate(client.maintenance) : '—'}</td>
+        <td class="actions">
+          <button data-action="edit" data-id="${client.id}">Editar</button>
+          <button data-action="delete" data-id="${client.id}" class="danger">Excluir</button>
         </td>
-        <td>
-          ${escapeHtml(client.store || '')}<br>
-          ${formatDate(client.installDate)}
-        </td>
-        <td>${formatDate(client.contractDate)}</td>
-        <td>
-          Total: ${client.total != null ? formatCurrency(client.total) : '-'}<br>
-          Entrada: ${client.entry != null ? formatCurrency(client.entry) : '-'}<br>
-          Parcelas: ${client.installments ?? '-'}
-        </td>
-        <td>${formatDate(client.maintenance)}</td>
-        <td>
-          <div class="actions">
-            <button class="btn ghost small" data-action="edit" data-id="${client.id}">Editar</button>
-            <button class="btn danger small" data-action="delete" data-id="${client.id}">Excluir</button>
-          </div>
-        </td>
-      </tr>`)
-    .join('');
-
-  elements.clientsTable.innerHTML = rows;
+      `;
+      elements.clientsTable.appendChild(row);
+    });
 }
 
 function renderActivity() {
-  if (!elements.activityList) return;
-  if (!state.activity.length) {
-    elements.activityList.innerHTML = '<li><p class="muted">Nenhuma atividade registrada ainda.</p></li>';
-    return;
-  }
-
-  const items = state.activity
-    .slice(0, 40)
-    .map((entry) => `
-      <li>
-        <time>${formatDateTime(entry.time)}</time>
-        <strong>${escapeHtml(entry.action)}</strong>
-        <p>${escapeHtml(entry.detail)}</p>
-        <small class="muted">${escapeHtml(entry.user || 'sistema')}</small>
-      </li>`)
-    .join('');
-
-  elements.activityList.innerHTML = items;
+  elements.activityList.innerHTML = '';
+  state.activity
+    .slice()
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .forEach((item) => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <strong>${item.action}</strong>
+        <span>${formatDateTime(item.timestamp)} • ${item.user}</span>
+        <p>${item.description}</p>
+      `;
+      elements.activityList.appendChild(li);
+    });
 }
 
 function renderUsers() {
-  if (!elements.usersTable) return;
-  if (!state.users.length) {
-    elements.usersTable.innerHTML = '<tr><td colspan="3">Nenhum usuário cadastrado.</td></tr>';
-    return;
-  }
-
-  const rows = state.users
-    .map((user) => `
-      <tr>
-        <td>${escapeHtml(user.username)}</td>
+  elements.usersTable.innerHTML = '';
+  state.users
+    .slice()
+    .sort((a, b) => a.username.localeCompare(b.username))
+    .forEach((user) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${user.username}</td>
+        <td>${`${user.firstName || ''} ${user.lastName || ''}`.trim() || '—'}</td>
         <td>${user.role === 'admin' ? 'Administrador' : 'Usuário'}</td>
         <td>${formatDateTime(user.createdAt)}</td>
-      </tr>`)
-    .join('');
-
-  elements.usersTable.innerHTML = rows;
+      `;
+      elements.usersTable.appendChild(row);
+    });
 }
 
-function renderSalesSelect() {
-  if (!elements.salePiece) return;
-  const options = state.pieces
-    .map((piece) => `<option value="${piece.id}">${escapeHtml(piece.name)} (${piece.quantity} em estoque)</option>`)
-    .join('');
-  elements.salePiece.innerHTML = `<option value="">Selecione...</option>${options}`;
-}
-
-function updateSummary() {
+function renderSummary() {
   const totalPieces = state.pieces.length;
   const totalStock = state.pieces.reduce((acc, piece) => acc + Number(piece.quantity || 0), 0);
   const totalSales = state.sales.length;
   const totalClients = state.clients.length;
+
   elements.summaryPieces.textContent = totalPieces;
   elements.summaryStock.textContent = totalStock;
   elements.summarySales.textContent = totalSales;
   elements.summaryClients.textContent = totalClients;
+
+  const roleLabel = state.currentUser?.role === 'admin' ? 'Administrador Brivax' : 'Usuário Brivax';
+  elements.roleBadge.textContent = roleLabel;
 }
 
-function isAdmin() {
-  return Boolean(state.currentUser && state.currentUser.role === 'admin');
+function updateSaleOptions() {
+  elements.salePiece.innerHTML = '<option value="">Selecione</option>';
+  state.pieces
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((piece) => {
+      const option = document.createElement('option');
+      option.value = piece.id;
+      option.textContent = `${piece.name} (Estoque: ${piece.quantity})`;
+      elements.salePiece.appendChild(option);
+    });
 }
 
-function saveState(key) {
-  const storageKey = STORAGE_KEYS[key];
-  if (!storageKey) return;
-  localStorage.setItem(storageKey, JSON.stringify(state[key]));
-}
-
-function logActivity(action, detail, userOverride) {
+function logActivity(action, description, user) {
   const entry = {
     id: generateId('activity'),
     action,
-    detail,
-    user: userOverride || (state.currentUser ? state.currentUser.username : 'sistema'),
-    time: new Date().toISOString()
+    description,
+    user,
+    timestamp: new Date().toISOString()
   };
-  state.activity.unshift(entry);
-  state.activity = state.activity.slice(0, 80);
+  state.activity.push(entry);
   saveState('activity');
-  renderActivity();
+  if (state.currentUser) {
+    renderActivity();
+  }
+}
+
+function saveState(key) {
+  localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(state[key]));
+}
+
+function saveSession() {
+  if (!state.currentUser) return;
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ userId: state.currentUser.id, panel: state.currentPanel })
+  );
+}
+
+function updateInstallButton() {
+  if (!elements.btnInstall) return;
+  elements.btnInstall.hidden = !deferredPrompt;
 }
 
 function generateId(prefix) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36)}`;
+  return `${prefix}_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 }
 
 function formatCurrency(value) {
-  if (value == null || Number.isNaN(value)) return '-';
-  return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }
 
 function formatDate(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('pt-BR');
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('pt-BR').format(new Date(value));
 }
 
 function formatDateTime(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return `${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(new Date(value));
 }
 
-function escapeHtml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch((error) => {
-      console.warn('Falha ao registrar service worker', error);
-    });
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js').catch((error) => {
+    console.warn('Falha ao registrar service worker', error);
   });
-}
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('DOMContentLoaded', init);
 }

@@ -2,6 +2,8 @@
 
 Aplicativo web PWA para controle de estoque, cadastro de clientes e gestão de usuários com visual personalizado Brivax.
 
+O painel foi reconstruído com navegação clara, cartões de resumo e formulários responsivos nas cores cinza, laranja, preto e vermelho solicitadas. A tela inicial apresenta cadastro de usuário completo (nome, sobrenome, telefone, e-mail, usuário minúsculo, senha dupla e opção **Lembrar de mim**) e a área autenticada organiza estoque, vendas, produtos e clientes em abas dedicadas.
+
 ## Como executar localmente
 
 1. Instale as dependências do navegador (nenhuma dependência de build é necessária).
@@ -43,9 +45,10 @@ O primeiro acesso cria esse administrador automaticamente. Após o login como ad
 
 ## Fluxos principais testados
 
-- Cadastro de usuário com opção **Lembrar de mim**, entrada automática no sistema e logout.
-- Login utilizando o administrador padrão e acesso às seções exclusivas (vendas, usuários e clientes).
-- Registro de peças e atualização automática do estoque após vincular uma venda.
-- Cadastro, edição e remoção de produtos no catálogo administrativo com controle de estoque independente.
+- Cadastro de usuário com opção **Lembrar de mim**, entrada automática e restauração da sessão salva.
+- Login utilizando o administrador padrão e acesso às abas exclusivas (vendas, produtos, clientes, histórico e usuários).
+- Cadastro de peças por usuários comuns e edição/remoção de itens apenas pelo administrador, com atualização de estoque somada ao resumo.
+- Registro de vendas administrativas com baixa automática de estoque e histórico detalhado da operação.
+- Cadastro completo de clientes com informações de contrato, instalação e financeiro, além do catálogo de produtos administrado.
 
 Esses fluxos foram verificados manualmente executando o servidor local indicado acima.
